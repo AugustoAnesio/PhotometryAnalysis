@@ -1,0 +1,493 @@
+P = 'C:\Users\Augusto\Documents\PhD\Fiber_Photometry_PV_Cre\Analysis\dff_PLS_Based_Analysis\Results\WD10\Mice 1101.131.1D';
+S = dir(fullfile(P,'*.csv')); 
+for k = 1:numel(S)
+    F = fullfile(P,S(k).name);
+    S(k).data = readtable(F);
+end
+
+zdFF_Timestamps = table2array(S(5).data)
+Cocaine_Entering_Timestamp = table2array(S(1).data)
+Door_Opening_Timestamp = table2array(S(2).data)
+Start_Exploration_Timestamp = table2array(S(4).data)
+
+%-------->>>>>>> INSERT WHERE YOU WANT TO SAVE THE PROCESSED FILES
+File_Destination_Path = dir("C:\Users\Augusto\Documents\PhD\Fiber_Photometry_PV_Cre\Analysis\dff_PLS_Based_Analysis\Results\WD10\Mice 1101.131.1D\test")
+File_Destination = (File_Destination_Path.folder);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% DOOR OPENING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%Select PSTH traces
+%One minute before and one minute after
+
+Door_Opening_i= Door_Opening_Timestamp-(60000);      %this index is based on time, not row number, attention!
+Door_Opening_f = Door_Opening_Timestamp+(60000);
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Door_Opening_i)); %Find the index array of Door_Opening
+
+Door_Opening_i_Row = I
+
+clear("I")
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Door_Opening_f)); %Find the index array of Door_Opening
+
+Door_Opening_final_Row = I
+
+clear("I");
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Door_Opening_Timestamp));
+
+Door_Opening_Row = I
+
+clear("I");
+
+Door_Opening_Window = zdFF_Timestamps(Door_Opening_i_Row:Door_Opening_final_Row,:);
+
+Door_Opening_Window_corrected0 = [((Door_Opening_Window(:,1) - Door_Opening_Timestamp)/1000),Door_Opening_Window(:,2)];
+
+
+
+
+% Peaks detection from Door_Opening_Window
+
+Time = Door_Opening_Window_corrected0(:,1);
+zscore = Door_Opening_Window_corrected0(:,2);
+
+findpeaks(zscore,Time,'MinPeakProminence',0.2,'Annotate','extents','MinPeakWidth',0.1);
+xlabel('Time(s)','FontSize',14);
+ylabel('zscore','FontSize',14);
+xticks(-60:5:60);
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Detection.fig')));
+
+
+[pks,locs,w,p,] = findpeaks(zscore,Time,'MinPeakProminence',0.2,'Annotate','extents','MinPeakWidth',0.1);
+h = histogram(locs,120,"LineStyle","-",'FaceColor','black','EdgeColor','w'); %Here, the bins represent how many bars.
+xlabel('Time(s)','FontSize',14);
+ylabel('Hz','FontSize',16);
+xticks(-60:10:60);
+set(gca,'XMinorTick','on');
+xline(0,'LineStyle','--','Color','r','LineWidth',2)
+saveas(gca,(strcat(File_Destination,'\Peaks_histogram.fig')));
+
+peaks_max = pks;
+peaks_time = locs;
+peaks_width = w;
+peaks_amplitude = p; %MatLab refers as peak prominences
+
+Peaks_Data_Door_Opening = table(peaks_time,peaks_max,peaks_width,peaks_amplitude);
+
+
+% to have a acccurate mean of every measure over time, we need to place
+%every peak and related data in the original position on the time array, bc peaks_time has
+%only the times of peaks, and not the entire recoording. 
+
+A = nan(height(Time),3);
+
+Time_tt = seconds(Time);
+
+T1 = timetable(Time_tt,A(:,1),A(:,2),A(:,3));
+
+T1.Properties.VariableNames{1} = 'peaks_max' 
+T1.Properties.VariableNames{2} = 'peaks_width' 
+T1.Properties.VariableNames{3} = 'peaks_amplitude' 
+
+%to calculate the mean of peaks_max, peaks_time... every second.
+
+Timetable_Times = seconds(table2array(Peaks_Data_Door_Opening(:,1)));
+% 
+Peaks_Data_Door_Opening_TT = timetable(Timetable_Times,Peaks_Data_Door_Opening.peaks_max,Peaks_Data_Door_Opening.peaks_width,Peaks_Data_Door_Opening.peaks_amplitude);
+% 
+Peaks_Data_Door_Opening_TT.Properties.VariableNames{1} = 'peaks_max' 
+Peaks_Data_Door_Opening_TT.Properties.VariableNames{2} = 'peaks_width' 
+Peaks_Data_Door_Opening_TT.Properties.VariableNames{3} = 'peaks_amplitude' 
+
+join = synchronize(T1,Peaks_Data_Door_Opening_TT);
+
+clean_join = join(:,4:6);
+ 
+F = retime(clean_join,'secondly', 'mean'); % number of evets/second 
+
+F = timetable2table(F); 
+% 
+F_time = seconds(F.Time_tt); %to remove the suffix sec
+% 
+F = [F_time,F.peaks_max_Peaks_Data_Door_Opening_TT,F.peaks_width_Peaks_Data_Door_Opening_TT,F.peaks_amplitude_Peaks_Data_Door_Opening_TT];
+
+idx = isnan(F);
+% 
+F(idx) = 0;            % To change NaN for zeros
+
+F = array2table(F);
+
+F.Properties.VariableNames{1} = 'Time (s)'
+F.Properties.VariableNames{2} = 'Peaks Max'
+F.Properties.VariableNames{3} = 'Peaks Width'
+F.Properties.VariableNames{4} = 'Peaks Amplitude'
+
+plot(F,"Time (s)", 'Peaks Amplitude');
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Amplitude.fig')));
+
+
+plot(F,"Time (s)","Peaks Width");
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Width.fig')));
+
+
+plot(F,"Time (s)","Peaks Max");
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Max.fig')));
+
+
+% This function counts the events inside a specified interval of rows
+% (bin). In this case every 120 means the number of intervals. As we have
+% an interval of 120000 millisec (2 minutes), we will have intervals of
+% 1000 ms, that is, number of events/seconds, that is the same of Frequency
+% in Hz. However, we need to add 1, because of the additional points
+% betweem -60/-59 and 59 and 60
+% 
+[N,edges] = histcounts(peaks_time,height(F_time))
+
+Peaks_Frequency_Door_Opening = N.' % data in Hz
+% 
+% 
+Peaks_Frequency_Door_Opening = table(F_time,Peaks_Frequency_Door_Opening);
+Peaks_Frequency_Door_Opening.Properties.VariableNames{1} = 'Time (s)'
+Peaks_Frequency_Door_Opening.Properties.VariableNames{2} = 'Frequency (Hz)'
+
+plot(Peaks_Frequency_Door_Opening,"Time (s)",'Frequency (Hz)');
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Hz.fig')));
+% 
+% 
+F = [F,Peaks_Frequency_Door_Opening(:,2)];
+
+
+
+writetable(Peaks_Data_Door_Opening,(strcat(File_Destination,'\Peaks_Door_Opening_Raw_Data.csv')));
+
+writetable(F,(strcat(File_Destination,'\Peaks_Door_Opening_Corrected_Data.csv')))
+
+
+
+clear('I');
+clear("edges")
+clear('N')
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% START EXPLORATION %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%Select PSTH traces
+%One minute before and one minute after
+
+Start_Exploration_i= Start_Exploration_Timestamp-(60000);      %this index is based on time, not row number, attention!
+Start_Exploration_f = Start_Exploration_Timestamp+(60000);
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Start_Exploration_i)); %Find the index array of Start_Exploration
+
+Start_Exploration_i_Row = I
+
+clear("I")
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Start_Exploration_f)); %Find the index array of Start_Exploration
+
+Start_Exploration_final_Row = I
+
+clear("I");
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Start_Exploration_Timestamp));
+
+Start_Exploration_Row = I
+
+clear("I");
+
+Start_Exploration_Window = zdFF_Timestamps(Start_Exploration_i_Row:Start_Exploration_final_Row,:);
+
+Start_Exploration_Window_corrected0 = [((Start_Exploration_Window(:,1) - Start_Exploration_Timestamp)/1000),Start_Exploration_Window(:,2)];
+
+
+
+
+% Peaks detection from Start_Exploration_Window
+
+Time = Start_Exploration_Window_corrected0(:,1);
+zscore = Start_Exploration_Window_corrected0(:,2);
+
+findpeaks(zscore,Time,'MinPeakProminence',0.2,'Annotate','extents','MinPeakWidth',0.1);
+xlabel('Time(s)','FontSize',14);
+ylabel('zscore','FontSize',14);
+xticks(-60:5:600);
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Detection.fig')));
+
+
+[pks,locs,w,p,] = findpeaks(zscore,Time,'MinPeakProminence',0.2,'Annotate','extents','MinPeakWidth',0.1);
+h = histogram(locs,120,"LineStyle","-",'FaceColor','black','EdgeColor','w'); %Here, the bins represent how many bars.
+xlabel('Time(s)','FontSize',14);
+ylabel('Hz','FontSize',16);
+xticks(-60:10:60);
+set(gca,'XMinorTick','on');
+xline(0,'LineStyle','--','Color','r','LineWidth',2)
+saveas(gca,(strcat(File_Destination,'\Peaks_histogram.fig')));
+
+peaks_max = pks;
+peaks_time = locs;
+peaks_width = w;
+peaks_amplitude = p; %MatLab refers as peak prominences
+
+Peaks_Data_Start_Exploration = table(peaks_time,peaks_max,peaks_width,peaks_amplitude);
+
+
+% to have a acccurate mean of every measure over time, we need to place
+%every peak and related data in the original position on the time array, bc peaks_time has
+%only the times of peaks, and not the entire recoording. 
+
+A = nan(height(Time),3);
+
+Time_tt = seconds(Time);
+
+T1 = timetable(Time_tt,A(:,1),A(:,2),A(:,3));
+
+T1.Properties.VariableNames{1} = 'peaks_max' 
+T1.Properties.VariableNames{2} = 'peaks_width' 
+T1.Properties.VariableNames{3} = 'peaks_amplitude' 
+
+%to calculate the mean of peaks_max, peaks_time... every second.
+
+Timetable_Times = seconds(table2array(Peaks_Data_Start_Exploration(:,1)));
+% 
+Peaks_Data_Start_Exploration_TT = timetable(Timetable_Times,Peaks_Data_Start_Exploration.peaks_max,Peaks_Data_Start_Exploration.peaks_width,Peaks_Data_Start_Exploration.peaks_amplitude);
+% 
+Peaks_Data_Start_Exploration_TT.Properties.VariableNames{1} = 'peaks_max' 
+Peaks_Data_Start_Exploration_TT.Properties.VariableNames{2} = 'peaks_width' 
+Peaks_Data_Start_Exploration_TT.Properties.VariableNames{3} = 'peaks_amplitude' 
+
+join = synchronize(T1,Peaks_Data_Start_Exploration_TT);
+
+clean_join = join(:,4:6);
+ 
+F = retime(clean_join,'secondly', 'mean'); % number of evets/second 
+
+F = timetable2table(F); 
+% 
+F_time = seconds(F.Time_tt); %to remove the suffix sec
+% 
+F = [F_time,F.peaks_max_Peaks_Data_Start_Exploration_TT,F.peaks_width_Peaks_Data_Start_Exploration_TT,F.peaks_amplitude_Peaks_Data_Start_Exploration_TT];
+
+idx = isnan(F);
+% 
+F(idx) = 0;            % To change NaN for zeros
+
+F = array2table(F);
+
+F.Properties.VariableNames{1} = 'Time (s)'
+F.Properties.VariableNames{2} = 'Peaks Max'
+F.Properties.VariableNames{3} = 'Peaks Width'
+F.Properties.VariableNames{4} = 'Peaks Amplitude'
+
+plot(F,"Time (s)", 'Peaks Amplitude');
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Amplitude.fig')));
+
+
+plot(F,"Time (s)","Peaks Width");
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Width.fig')));
+
+
+plot(F,"Time (s)","Peaks Max");
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Max.fig')));
+
+
+% This function counts the events inside a specified interval of rows
+% (bin). In this case every 120 means the number of intervals. As we have
+% an interval of 120000 millisec (2 minutes), we will have intervals of
+% 1000 ms, that is, number of events/seconds, that is the same of Frequency
+% in Hz. However, we need to add 1, because of the additional points
+% betweem -60/-59 and 59 and 60
+% 
+[N,edges] = histcounts(peaks_time,height(F_time))
+
+Peaks_Frequency_Start_Exploration = N.' % data in Hz
+% 
+% 
+Peaks_Frequency_Start_Exploration = table(F_time,Peaks_Frequency_Start_Exploration);
+Peaks_Frequency_Start_Exploration.Properties.VariableNames{1} = 'Time (s)'
+Peaks_Frequency_Start_Exploration.Properties.VariableNames{2} = 'Frequency (Hz)'
+
+plot(Peaks_Frequency_Start_Exploration,"Time (s)",'Frequency (Hz)');
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Hz.fig')));
+% 
+% 
+F = [F,Peaks_Frequency_Start_Exploration(:,2)];
+
+
+
+writetable(Peaks_Data_Start_Exploration,(strcat(File_Destination,'\Peaks_Start_Exploration_Raw_Data.csv')));
+
+writetable(F,(strcat(File_Destination,'\Peaks_Start_Exploration_Corrected_Data.csv')))
+
+
+
+clear('I');
+clear("edges")
+clear('N')
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% COCAINE ENTERING %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+%Select PSTH traces
+%One minute before and one minute after
+
+Cocaine_Entering_i= Cocaine_Entering_Timestamp-(60000);      %this index is based on time, not row number, attention!
+Cocaine_Entering_f = Cocaine_Entering_Timestamp+(60000);
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Cocaine_Entering_i)); %Find the index array of Cocaine_Entering
+
+Cocaine_Entering_i_Row = I
+
+clear("I")
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Cocaine_Entering_f)); %Find the index array of Cocaine_Entering
+
+Cocaine_Entering_final_Row = I
+
+clear("I");
+
+[M,I] = min(abs(zdFF_Timestamps(:,1)-Cocaine_Entering_Timestamp));
+
+Cocaine_Entering_Row = I
+
+clear("I");
+
+Cocaine_Entering_Window = zdFF_Timestamps(Cocaine_Entering_i_Row:Cocaine_Entering_final_Row,:);
+
+Cocaine_Entering_Window_corrected0 = [((Cocaine_Entering_Window(:,1) - Cocaine_Entering_Timestamp)/1000),Cocaine_Entering_Window(:,2)];
+
+
+
+
+% Peaks detection from Cocaine_Entering_Window
+
+Time = Cocaine_Entering_Window_corrected0(:,1);
+zscore = Cocaine_Entering_Window_corrected0(:,2);
+
+findpeaks(zscore,Time,'MinPeakProminence',0.2,'Annotate','extents','MinPeakWidth',0.1);
+xlabel('Time(s)','FontSize',14);
+ylabel('zscore','FontSize',14);
+xticks(-60:5:600);
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Detection.fig')));
+
+
+[pks,locs,w,p,] = findpeaks(zscore,Time,'MinPeakProminence',0.2,'Annotate','extents','MinPeakWidth',0.1);
+h = histogram(locs,120,"LineStyle","-",'FaceColor','black','EdgeColor','w'); %Here, the bins represent how many bars.
+xlabel('Time(s)','FontSize',14);
+ylabel('Hz','FontSize',16);
+xticks(-60:10:60);
+set(gca,'XMinorTick','on');
+xline(0,'LineStyle','--','Color','r','LineWidth',2)
+saveas(gca,(strcat(File_Destination,'\Peaks_histogram.fig')));
+
+peaks_max = pks;
+peaks_time = locs;
+peaks_width = w;
+peaks_amplitude = p; %MatLab refers as peak prominences
+
+Peaks_Data_Cocaine_Entering = table(peaks_time,peaks_max,peaks_width,peaks_amplitude);
+
+
+% to have a acccurate mean of every measure over time, we need to place
+%every peak and related data in the original position on the time array, bc peaks_time has
+%only the times of peaks, and not the entire recoording. 
+
+A = nan(height(Time),3);
+
+Time_tt = seconds(Time);
+
+T1 = timetable(Time_tt,A(:,1),A(:,2),A(:,3));
+
+T1.Properties.VariableNames{1} = 'peaks_max' 
+T1.Properties.VariableNames{2} = 'peaks_width' 
+T1.Properties.VariableNames{3} = 'peaks_amplitude' 
+
+%to calculate the mean of peaks_max, peaks_time... every second.
+
+Timetable_Times = seconds(table2array(Peaks_Data_Cocaine_Entering(:,1)));
+% 
+Peaks_Data_Cocaine_Entering_TT = timetable(Timetable_Times,Peaks_Data_Cocaine_Entering.peaks_max,Peaks_Data_Cocaine_Entering.peaks_width,Peaks_Data_Cocaine_Entering.peaks_amplitude);
+% 
+Peaks_Data_Cocaine_Entering_TT.Properties.VariableNames{1} = 'peaks_max' 
+Peaks_Data_Cocaine_Entering_TT.Properties.VariableNames{2} = 'peaks_width' 
+Peaks_Data_Cocaine_Entering_TT.Properties.VariableNames{3} = 'peaks_amplitude' 
+
+join = synchronize(T1,Peaks_Data_Cocaine_Entering_TT);
+
+clean_join = join(:,4:6);
+ 
+F = retime(clean_join,'secondly', 'mean'); % number of evets/second 
+
+F = timetable2table(F); 
+% 
+F_time = seconds(F.Time_tt); %to remove the suffix sec
+% 
+F = [F_time,F.peaks_max_Peaks_Data_Cocaine_Entering_TT,F.peaks_width_Peaks_Data_Cocaine_Entering_TT,F.peaks_amplitude_Peaks_Data_Cocaine_Entering_TT];
+
+idx = isnan(F);
+% 
+F(idx) = 0;            % To change NaN for zeros
+
+F = array2table(F);
+
+F.Properties.VariableNames{1} = 'Time (s)'
+F.Properties.VariableNames{2} = 'Peaks Max'
+F.Properties.VariableNames{3} = 'Peaks Width'
+F.Properties.VariableNames{4} = 'Peaks Amplitude'
+
+plot(F,"Time (s)", 'Peaks Amplitude');
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Amplitude.fig')));
+
+
+plot(F,"Time (s)","Peaks Width");
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Width.fig')));
+
+
+plot(F,"Time (s)","Peaks Max");
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Max.fig')));
+
+
+% This function counts the events inside a specified interval of rows
+% (bin). In this case every 120 means the number of intervals. As we have
+% an interval of 120000 millisec (2 minutes), we will have intervals of
+% 1000 ms, that is, number of events/seconds, that is the same of Frequency
+% in Hz. However, we need to add 1, because of the additional points
+% betweem -60/-59 and 59 and 60
+% 
+[N,edges] = histcounts(peaks_time,height(F_time));
+
+Peaks_Frequency_Cocaine_Entering = N.' % data in Hz
+% 
+% 
+Peaks_Frequency_Cocaine_Entering = table(F_time,Peaks_Frequency_Cocaine_Entering);
+Peaks_Frequency_Cocaine_Entering.Properties.VariableNames{1} = 'Time (s)'
+Peaks_Frequency_Cocaine_Entering.Properties.VariableNames{2} = 'Frequency (Hz)'
+
+plot(Peaks_Frequency_Cocaine_Entering,"Time (s)",'Frequency (Hz)');
+xline(0,'LineStyle','--','Color','r','LineWidth',1,'DisplayName','Door Opening');
+saveas(gca,(strcat(File_Destination,'\Peaks_Hz.fig')));
+% 
+% 
+F = [F,Peaks_Frequency_Cocaine_Entering(:,2)];
+
+
+
+writetable(Peaks_Data_Cocaine_Entering,(strcat(File_Destination,'\Peaks_Cocaine_Entering_Raw_Data.csv')));
+
+writetable(F,(strcat(File_Destination,'\Peaks_Cocaine_Entering_Corrected_Data.csv')))
+
+
+
+clear('I');
+clear("edges")
+clear('N')
+
