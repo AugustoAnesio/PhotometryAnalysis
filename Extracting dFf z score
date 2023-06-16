@@ -1,0 +1,352 @@
+P = 'C:\Users\Augusto\Documents\PhD\Fiber_Photometry_PV_Cre\Analysis\Guppy_PSTH_Analysis\Data_for_MATLAB_Guppy_Format\WD10\Mice1098.137.1G1D';
+S = dir(fullfile(P,'*.csv')); 
+for k = 1:numel(S)
+    F = fullfile(P,S(k).name);
+    S(k).data = readtable(F);
+end
+Door_Opening = S(2).data;
+Start_Exploration = S(5).data;
+Cocaine_Entering = S(1).data;
+FiberData415 = S(3).data;
+FiberData470 = S(4).data;
+Timestamp415 = S(6).data;
+Timestamp470 = S(7).data;
+Video_Timestamp = S(8).data;
+
+
+%-------->>>>>>> INSERT WHERE YOU WANT TO SAVE THE PROCESSED FILES
+File_Destination_Path = dir("C:\Users\Augusto\Documents\PhD\Fiber_Photometry_PV_Cre\Analysis\dff_PLS_Based_Analysis\WD10\Mice1098.137.1G1D")
+File_Destination = (File_Destination_Path.folder);
+
+Creating table suitable for the file processing
+equalized_data_length = height(FiberData415) - 5; %Both arrays (415 and 470) must have same lenght, here we criate a reference size to padronize.
+
+FiberData415 = FiberData415(2:equalized_data_length,:);
+FiberData470 = FiberData470(2:equalized_data_length,:);
+Timestamp415 = Timestamp415(2:equalized_data_length,:);
+Timestamp470 = Timestamp470(2:equalized_data_length,:);
+
+
+FiberData = table(FiberData415.FrameCounter,FiberData415.Region0G,FiberData415.Timestamp,Timestamp415.Var2,FiberData470.FrameCounter,FiberData470.Region0G,FiberData470.Timestamp,Timestamp470.Var2)
+
+%FiberData = table(FiberData415.FrameCounter,FiberData415.Region1G, FiberData415.Timestamp,Timestamp415.Var2, FiberData470.FrameCounter, FiberData470.Region1G, FiberData470.Timestamp,Timestamp470.Var2)
+
+
+FiberData.Properties.VariableNames{1} = 'Frame_410nm'
+FiberData.Properties.VariableNames{2} = 'MeanInt_410nm'
+FiberData.Properties.VariableNames{3} = 'Time_410nm'
+FiberData.Properties.VariableNames{4} = 'Realtime_410nm'
+FiberData.Properties.VariableNames{5} = 'Frame_470nm'
+FiberData.Properties.VariableNames{6} = 'MeanInt_470nm'
+FiberData.Properties.VariableNames{7} = 'Time_470nm'
+FiberData.Properties.VariableNames{8} = 'Realtime_470nm'
+
+% FP_470_Timestamps = [FiberData.Time_470nm(2:end)];
+% FP_470_Timestamps = FP_470_Timestamps- FP_470_Timestamps(1,1)
+% FP_470_Timestamps = FP_470_Timestamps*1000
+
+ 
+
+writetable(FiberData,(strcat(File_Destination,'\FiberData.csv')));
+
+Your data
+df = FiberData %readtable('example.csv'); % Change to your file
+head(df,5)
+
+% Change the next two lines depending on your data frame
+raw_reference = df.MeanInt_410nm(2:end)';
+raw_signal = df.MeanInt_470nm(2:end)';
+% Plot raw data
+figure
+subplot(2,1,1)
+plot(raw_reference,'m')
+subplot(2,1,2)
+
+plot(raw_signal,'k')
+
+
+Manually Insert coordinates from graph data tips to excude bad signal
+% % Comment if not used. 
+C1 =21767
+C2 = 22273
+% % % % 
+% C3 = 43782
+% C4 = 24574
+% %
+% C5 = 31451
+% C6 = 32300
+
+% C7 = 43279
+% % C7 = 44000
+
+%For no cut
+% FiberData_cut = FiberData
+%For one cut
+  FiberData_cut = [FiberData(1:C1,:);FiberData(C2:end,:)];
+% For two cuts 
+%  FiberData_cut = [FiberData(1:C1,:);FiberData(C2:C3,:);FiberData(C4:end,:)];
+
+%For three cuts
+% FiberData_cut = [FiberData(1:C1,:);FiberData(C2:C3,:);FiberData(C4:C5,:);FiberData(C6:C7,:)];
+
+
+%For Four cuts
+%  FiberData_cut = [FiberData(1:C1,:);FiberData(C2:C3,:);FiberData(C4:C5,:);FiberData(C6:C7,:)];
+
+%Plot again
+
+df = FiberData_cut %readtable('example.csv'); % Change to your file
+head(df,5)
+
+% Change the next two lines depending on your data frame
+raw_reference = df.MeanInt_410nm(2:end)';
+raw_signal = df.MeanInt_470nm(2:end)';
+% Plot raw data
+figure
+subplot(2,1,1)
+plot(raw_reference,'m')
+subplot(2,1,2)
+
+plot(raw_signal,'b')
+
+Remove the begining of recordings
+remove =3300;
+cut_reference = raw_reference(remove:end);
+cut_signal = raw_signal(remove:end);
+
+% Plot signals
+figure
+subplot(2,1,1)
+plot(cut_reference,'m')
+subplot(2,1,2)
+plot(cut_signal,'b')
+
+Analysis step by step
+Smooth data
+smooth_win = 10;
+smooth_reference = movmean(cut_reference,smooth_win);
+smooth_signal = movmean(cut_signal,smooth_win);
+
+% Plot smoothed signals
+figure
+subplot(2,1,1)
+plot(smooth_reference,'m')
+subplot(2,1,2)
+plot(smooth_signal,'b')
+
+
+
+Remove slope using airPLS algorithm (airPLS.m)
+lambda = 5e9;
+order = 2;
+wep = 0.1;
+p = 0.5;
+itermax = 50;
+[reference,base_r]= airPLS(smooth_reference,lambda,order,wep,p,itermax);
+[signal,base_s]= airPLS(smooth_signal,lambda,order,wep,p,itermax);
+
+% Plot slopes
+figure
+subplot(2,1,1)
+plot(smooth_reference,'m')
+hold on
+plot(base_r,'k')
+hold off
+subplot(2,1,2)
+plot(smooth_signal,'b')
+hold on
+plot(base_s,'k')
+hold off
+
+Define baseline period
+% a period of 2 minutes after the first minute of recoording
+baseline_i = 1200;
+baseline_f = 3600;
+
+baseline_reference = reference(:,baseline_i:baseline_f);
+baseline_signal = signal(:,baseline_i:baseline_f);
+
+
+Standardize signals with baseline z-score
+z_reference = (reference - median(baseline_reference)) / std(baseline_reference);
+z_signal = (signal - median(baseline_signal)) / std(baseline_signal);
+
+% Plot signals
+figure
+subplot(2,1,1)
+plot(z_reference,'m')
+subplot(2,1,2)
+plot(z_signal,'b')
+
+Fit reference signal to calcium signal
+using non negative robust linear regression
+fitdata = fit(z_reference',z_signal',fittype('poly1'),'Robust','on');
+
+% Plot fit
+figure
+hold on
+plot(z_reference,z_signal,'k.')
+plot(fitdata,'b')
+hold off
+
+Align reference to signal
+z_reference = fitdata(z_reference)';
+
+% Plot aligned signals
+figure
+plot(z_reference,'m')
+hold on
+plot(z_signal,'b')
+hold off
+
+Calculate z-score dF/F
+zdFF = z_signal - z_reference;
+
+% Plot z-score dF/F
+figure
+plot(zdFF,'k')
+
+Adjust Timestamps to remove cuting gaps (USE ONLY IF CUT, OTHERWISE, COMMENT AND USE THE NEXT ONE)
+%apply cut to timestamps file
+
+FP_470_Timestamps_cut = table2array(FiberData_cut(remove+1:end,7));
+  
+FP_470_Timestamps_rate = abs(FP_470_Timestamps_cut(1,1) - (FP_470_Timestamps_cut(2,1)))
+
+C1_after_Remove = C1-remove
+
+Last_Number = (height(FiberData_cut)*FP_470_Timestamps_rate) + table2array(FiberData_cut(1,"Time_470nm"));
+
+FP_470_Timestamps_2 = ((FP_470_Timestamps_cut(C1_after_Remove,1):FP_470_Timestamps_rate:Last_Number)');
+
+FP_470_Timestamps_cut = [FP_470_Timestamps_cut(1:C1_after_Remove,1);FP_470_Timestamps_2]
+
+
+FP_470_Timestamps_cut = FP_470_Timestamps_cut- FP_470_Timestamps_cut(1,1)
+FP_470_Timestamps_cut = FP_470_Timestamps_cut(1:end)*1000
+
+For traces without cut
+ FP_470_Timestamps_cut = table2array(FiberData_cut(remove+1:end,7));
+ 
+ FP_470_Timestamps_cut = FP_470_Timestamps_cut- FP_470_Timestamps_cut(1,1)
+ FP_470_Timestamps_cut = FP_470_Timestamps_cut(1:end)*1000
+
+Convert video frame to FP (For events reference)
+% Event Door_Opening %%%%%%
+
+Door_Opening_Video_Frame= table2array(Door_Opening); % Ocorrency frame number
+
+Timestamps_Video = Video_Timestamp.Var1; % Array with video timestamps
+
+Event_Video_Timestamp = Timestamps_Video(Door_Opening_Video_Frame,1);
+
+  Timestamp470 = table2array(Timestamp470);
+
+[M,I] = min(abs(Timestamp470(2:end,2)-Event_Video_Timestamp)); %Detect in Computer TS array the index of the closest value to our behavior TS (I)
+
+Row_Event_Timestamp_1 = I - remove
+% % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% % % %discount the cut NEEDS CHENAGE IN CASE OF MULYIPLE CUTTING POINTS,
+% % % %otherwise, comment
+if Row_Event_Timestamp_1>C1
+ Row_Event_Timestamp_1 = Row_Event_Timestamp_1-(abs(C2-C1))% - (abs(C4-C3)) - (abs(C6-C5)) -(abs(C6-C5));;
+end
+% % % % 
+% % % % 
+% % % % % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+Event_Timestamp_1 = FP_470_Timestamps_cut(Row_Event_Timestamp_1,1); % In FP values
+% % 
+Event_Timestamp_1 =  Event_Timestamp_1 - FP_470_Timestamps_cut(1,1); %Normalized for zero
+% % 
+writematrix(Event_Timestamp_1,(strcat(File_Destination,'\Door_Opening_Timestamp.csv')));
+
+% 
+
+
+% Event Start_Exploration
+
+Start_Exploration_Video_Frame= table2array(Start_Exploration); % Ocorrency frame number
+
+Timestamps_Video = Video_Timestamp.Var1; % Array with video timestamps
+
+Event_Video_Timestamp_2 = Timestamps_Video(Start_Exploration_Video_Frame,1);
+
+% Timestamp470 = table2array(Timestamp470);
+
+[M,I] = min(abs(Timestamp470(2:end,2)-Event_Video_Timestamp_2)); %Detect in Computer TS array the index of the closest value to our behavior TS (I)
+
+Row_Event_Timestamp_2 = I - remove
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%discount the cut NEEDS CHANGE IN CASE OF MULYIPLE CUTTING POINTS,
+%otherwise, comment
+if Row_Event_Timestamp_2>C1
+ Row_Event_Timestamp_2 = Row_Event_Timestamp_2-(abs(C2-C1))% - (abs(C4-C3)) %- (abs(C6-C5));
+ end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+Event_Timestamp_2 = FP_470_Timestamps_cut(Row_Event_Timestamp_2,1); % In FP values
+% % 
+Event_Timestamp_2 =  Event_Timestamp_2 - FP_470_Timestamps_cut(1,1); %Normalized for zero
+% % 
+writematrix(Event_Timestamp_2,(strcat(File_Destination,'\Start_Exploration_Timestamp.csv')));
+
+
+
+
+% Event Cocaine_Entering
+
+Cocaine_Entering_Video_Frame= table2array(Cocaine_Entering); % Ocorrency frame number
+
+Timestamps_Video = Video_Timestamp.Var1; % Array with video timestamps
+
+Event_Video_Timestamp_3 = Timestamps_Video(Cocaine_Entering_Video_Frame,1);
+
+[M,I] = min(abs(Timestamp470(2:end,2)-Event_Video_Timestamp_3)); %Detect in Computer TS array the index of the closest value to our behavior TS (I)
+
+Row_Event_Timestamp_3 = I - remove
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%discount the cut NEEDS CHENAGE IN CASE OF MULYIPLE CUTTING POINTS,
+%otherwise, comment
+if Row_Event_Timestamp_3>C1
+ Row_Event_Timestamp_3 = Row_Event_Timestamp_3-(abs(C2-C1))% - (abs(C4-C3)) %- (abs(C6-C5));
+ end
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+Event_Timestamp_3 = FP_470_Timestamps_cut(Row_Event_Timestamp_3,1); % In FP values
+% % 
+Event_Timestamp_3 =  Event_Timestamp_3 - FP_470_Timestamps_cut(1,1); %Normalized for zero
+% % 
+writematrix(Event_Timestamp_3,(strcat(File_Destination,'\Cocaine_Entering_Timestamp.csv')));
+
+Convert KeyDown from system time to FP
+% % KeyDown "traduction" (above files structure necessary) we have all the
+% % timestamps FP 415/470 and computer timestamp 415/470 concatenated in two arrays. 
+% % Based on that, first, we localize the timestamp in
+% % Combined_computerTS_415_470 table closest to our keydown timestamp.
+% % Then, we use the line number to find the correspondent timestamp in FP
+% % array. 
+% 
+% %%%%%%%%%%%%%%%%% FOR KEYDOWN FILE REFERED AS 'KeyDown' IN THE ROOT FOLDER %%%%%%%%%%%%%%%%%%%%%%%%
+% 
+% Array_Release= table2array(Release); %covert to array for calculations
+% 
+% [M,I] = min(abs(Combined_computerTS_415_470_Array(:,2) - Array_Release)); %Row number (i) in computer timestamp table of the closest timestamp from KeyDown
+% 
+% KeyDown_FP_Format = Combined_FP_Timestamps_415_470.Var2(I) % FP_Timestamp located in the same row number from the closest computer_TS row.
+% 
+% KeyDown_FP_Format = array2table(KeyDown_FP_Format);
+% 
+% KeyDown_FP_Format.Properties.VariableNames{1} = 'timestamps';
+% 
+% writetable(KeyDown_FP_Format,(strcat(File_Destination,'\Release.csv')))
+
+Place zdff with timestamps
+% zdFF = array2table(zdFF);
+    zdFF = zdFF.'
+
+zdFF_Timestamps = [FP_470_Timestamps_cut,zdFF];
+%  
+ plot(FP_470_Timestamps_cut,zdFF)
+% 
+writematrix(zdFF_Timestamps,(strcat(File_Destination,'\zdFF_Timestamps.csv')));
+
